@@ -40,7 +40,7 @@ const transporter = nodemailer.createTransport({
 // });
 
 const generateOTP = () => {
-  return Math.floor(1000 + Math.random() * 9000).toString();
+  return Math.floor(100000 + Math.random() * 900000).toString();
 };
 
 
@@ -93,6 +93,7 @@ router.post("/api/register", upload.single('image'), async (req, res) => {
     // Send OTP via email
     await sendOTPEmail(email, otp); 
 
+    // Hash the password and store user data temporarily
     const passwordHash = await bcrypt.hash(password, 10);
     tempUserData[email] = {
       hotel_name,
@@ -106,6 +107,8 @@ router.post("/api/register", upload.single('image'), async (req, res) => {
       country,
       amount,
       image: req.file.path,
+      otp,
+      otpExpires
     };
 
     res.status(201).json({ message: "OTP sent to your email. Please verify to complete registration." });
@@ -144,6 +147,7 @@ router.post("/api/verify-login-otp", async (req, res) => {
   try {
     const { otp } = req.body;
 
+    // Find the user data by OTP
     const userEntry = Object.entries(tempUserData).find(
       ([_, data]) => data.otp === otp && data.otpExpires > Date.now()
     );
@@ -154,12 +158,11 @@ router.post("/api/verify-login-otp", async (req, res) => {
 
     const [email, userData] = userEntry;
 
-    userData.email = email;
-
     // Save the user to the database
     const user = new User(userData);
     await user.save();
 
+    // Remove temporary data
     delete tempUserData[email];
 
     res.json({ message: "Registration completed successfully" });

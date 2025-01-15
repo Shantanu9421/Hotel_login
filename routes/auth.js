@@ -142,12 +142,10 @@ router.post("/api/login", async (req, res) => {
 });
 
 
-
 router.post("/api/verify-login-otp", async (req, res) => {
   try {
     const { otp } = req.body;
 
-    // Find the user data by OTP
     const userEntry = Object.entries(tempUserData).find(
       ([_, data]) => data.otp === otp && data.otpExpires > Date.now()
     );
@@ -157,6 +155,9 @@ router.post("/api/verify-login-otp", async (req, res) => {
     }
 
     const [email, userData] = userEntry;
+
+    // Ensure email is added to the user data before saving
+    userData.email = email;
 
     // Save the user to the database
     const user = new User(userData);
@@ -169,4 +170,5 @@ router.post("/api/verify-login-otp", async (req, res) => {
   } catch (error) {
     res.status(500).json({ message: "OTP verification failed", error: error.message });
   }
-});
+});  
+

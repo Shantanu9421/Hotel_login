@@ -40,7 +40,7 @@ const transporter = nodemailer.createTransport({
 // });
 
 const generateOTP = () => {
-  return Math.floor(100000 + Math.random() * 900000).toString();
+  return Math.floor(1000 + Math.random() * 9000).toString();
 };
 
 
@@ -63,31 +63,40 @@ const sendOTPEmail = async (email, otp) => {
 
 
 
+let tempUserData = {};
 
 router.post("/api/register", upload.single('image'), async (req, res) => {
   try {
-
     const { hotel_name, hotel_owner_name, email, phone, password, hotel_address, hotel_reg_number,
-      hotel_gstin_number, city, country, amount } = req.body
+      hotel_gstin_number, city, country, amount } = req.body;
 
-      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
-      const phoneRegex = /^\d{10}$/
-  
-      if (!emailRegex.test(email)) {
-        return res.status(400).json({ message: "Invalid email format" })
-      }
-  
-      if (!phoneRegex.test(phone)) {
-        return res.status(400).json({ message: "Phone number must be 10 digits" })
-      }
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    const phoneRegex = /^\d{10}$/;
 
-    const imagePath = req.file.path
-   
-    const passwordHash = await bcrypt.hash(password, 10)
-    const user = new User({
+    if (!emailRegex.test(email)) {
+      return res.status(400).json({ message: "Invalid email format" });
+    }
+
+    if (!phoneRegex.test(phone)) {
+      return res.status(400).json({ message: "Phone number must be 10 digits" });
+    }
+
+    const userExists = await User.findOne({ email });
+    if (userExists) {
+      return res.status(400).json({ message: "User already exists" });
+    }
+
+    // Generate OTP
+    const otp = generateOTP();
+    const otpExpires = Date.now() + 3600000; // OTP expires in 1 hour
+
+    // Send OTP via email
+    await sendOTPEmail(email, otp); 
+
+    const passwordHash = await bcrypt.hash(password, 10);
+    tempUserData[email] = {
       hotel_name,
       hotel_owner_name,
-      email,
       phone,
       password: passwordHash,
       hotel_address,
@@ -96,30 +105,23 @@ router.post("/api/register", upload.single('image'), async (req, res) => {
       city,
       country,
       amount,
-      image: imagePath
-    })
+      image: req.file.path,
+    };
 
-    const userExists = await User.findOne({ email })
-
-    if (userExists) {
-      return res.status(400).json({ message: "User already exists" })
-    }
-    await user.save()
-    res.status(201).json({ message: "User created" })
+    res.status(201).json({ message: "OTP sent to your email. Please verify to complete registration." });
+  } catch (error) {
+    res.status(500).json({ message: "Hotel registration failed", error: error.message });
   }
-  catch (error) {
-    res.status(500).json({ message: "Hotel resgister failed" } + error)
-  }
-})
-
+});
 
 
 //Login hotel..
 router.post("/api/login", async (req, res) => {
   try {
     const { phone, password } = req.body;
-    const user = await User.findOne({ phone });
 
+    // Find user by phone number
+    const user = await User.findOne({ phone });
     if (!user) {
       return res.status(400).json({ message: "User not found" });
     }
@@ -129,14 +131,8 @@ router.post("/api/login", async (req, res) => {
       return res.status(400).json({ message: "Invalid credentials" });
     }
 
-    const otp = generateOTP();
-    user.otp = otp;
-    user.otpExpires = Date.now() + 360000;
-
-    await sendOTPEmail(user.email, otp);
-    await user.save();
-
-    res.json({ message: "OTP sent to your email. Please verify to complete login." });
+    // Login successful
+    res.json({ message: "Login successful", user });
   } catch (error) {
     res.status(500).json({ message: "Login failed", error: error.message });
   }
@@ -144,39 +140,29 @@ router.post("/api/login", async (req, res) => {
 
 
 
-router.post('/api/verify-login-otp', async (req, res) => {
+router.post("/api/verify-login-otp", async (req, res) => {
   try {
-    const { email, otp } = req.body;
-    const user = await User.findOne({ email });
+    const { otp } = req.body;
 
-    if (!user) {
-      return res.status(400).json({ message: 'User not found' });
+    const userEntry = Object.entries(tempUserData).find(
+      ([_, data]) => data.otp === otp && data.otpExpires > Date.now()
+    );
+
+    if (!userEntry) {
+      return res.status(400).json({ message: "Invalid or expired OTP" });
     }
 
-    if (user.otp !== otp) {
-      return res.status(400).json({ message: 'Invalid OTP' });
-    }
+    const [email, userData] = userEntry;
 
-    if (Date.now() > user.otpExpires) {
-      return res.status(400).json({ message: 'OTP expired' });
-    }
+    userData.email = email;
 
-    // Clear the OTP fields
-    user.otp = undefined;
-    user.otpExpires = undefined;
+    // Save the user to the database
+    const user = new User(userData);
     await user.save();
 
-    res.json({
-      message: "Login successful",
-      user: {
-        hotel_owner_name: user.hotel_owner_name,
-        hotel_name: user.hotel_name,
-        hotel_reg_number: user.hotel_reg_number,
-        phone: user.phone,
-        hotel_gstin_number: user.hotel_gstin_number,
-        email: user.email,
-      }
-    });
+    delete tempUserData[email];
+
+    res.json({ message: "Registration completed successfully" });
   } catch (error) {
     res.status(500).json({ message: "OTP verification failed", error: error.message });
   }

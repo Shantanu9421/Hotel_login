@@ -31,13 +31,7 @@ const transporter = nodemailer.createTransport({
     pass: process.env.PASSWORD
   }
 });
-// transporter.verify(function(error, success) {
-//   if (error) {
-//     console.log('SMTP connection error:', error);
-//   } else {
-//     console.log('SMTP server is ready to send emails');
-//   }
-// });
+
 
 const generateOTP = () => {
   return Math.floor(100000 + Math.random() * 900000).toString();
@@ -93,7 +87,6 @@ router.post("/api/register", upload.single('image'), async (req, res) => {
     // Send OTP via email
     await sendOTPEmail(email, otp); 
 
-    // Hash the password and store user data temporarily
     const passwordHash = await bcrypt.hash(password, 10);
     tempUserData[email] = {
       hotel_name,
@@ -112,6 +105,7 @@ router.post("/api/register", upload.single('image'), async (req, res) => {
     };
 
     res.status(201).json({ message: "OTP sent to your email. Please verify to complete registration." });
+    
   } catch (error) {
     res.status(500).json({ message: "Hotel registration failed", error: error.message });
   }
